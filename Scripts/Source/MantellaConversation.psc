@@ -306,7 +306,10 @@ function ProcessNpcSpeak(int handle)
                     voicelineFilename = "MantellaDi_MantellaDialogu_00001D8B_1"
                 endIf
                 int httpPort = repository.HttpPort
-                string baseUrl = "http://localhost:" + httpPort + "/audio/" + voiceFolder + "/"
+                ; Use 127.0.0.1 explicitly — same reason as sendLocalhostHttpRequest:
+                ; on Wine on Android `localhost` can resolve to IPv6 first and adb reverse
+                ; only forwards IPv4.
+                string baseUrl = "http://127.0.0.1:" + httpPort + "/audio/" + voiceFolder + "/"
                 string localBasePath = "Data/Sound/Voice/Mantella.esp/" + voiceFolder + "/"
                 ; .wav is mandatory for audio playback
                 SKSE_HTTP.downloadFileFromUrl(baseUrl + voicelineFilename + ".wav", localBasePath + voicelineFilename + ".wav")
