@@ -34,7 +34,7 @@ env:
   GRIMY_COMMIT: '4ba71332b4851985240f582a76017216a3bd452f'
 
   # Targets the user explicitly requires to build (hard failure if any fails).
-  REQUIRED_TARGETS: 'MantellaConversation MantellaConstants SKSE_HTTP'
+  REQUIRED_TARGETS: 'MantellaConversation MantellaConstants MantellaRepository SKSE_HTTP'
 
 jobs:
   build:
