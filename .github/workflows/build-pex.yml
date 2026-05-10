@@ -1,0 +1,191 @@
+name: Build Papyrus (.pex)
+
+# Compiles Mantella's Papyrus sources (Scripts/Source/*.psc) into .pex bytecode
+# without requiring Bethesda's Creation Kit. Uses:
+#   - russo-2025/papyrus-compiler (open-source, V-implemented, Linux ELF binary)
+#   - Rukan/Grimy-Skyrim-Papyrus-Source as community-curated header set for the
+#     Bethesda base scripts (Form, Actor, Quest, ObjectReference, ...) plus
+#     SkyUI MCM (SKI_*), ConsoleUtil, UIExtensions, StringUtil
+#
+# Bethesda's Scripts.zip is NOT redistributed by this repo; the stub set is
+# fetched at build time from the public Grimy repo (mirror of vanilla CK
+# source headers, used by the Skyrim modding community since 2016).
+
+on:
+  push:
+    paths:
+      - 'Scripts/Source/**.psc'
+      - '.github/workflows/build-pex.yml'
+  pull_request:
+    paths:
+      - 'Scripts/Source/**.psc'
+      - '.github/workflows/build-pex.yml'
+  workflow_dispatch:
+
+env:
+  # Pinned russo-2025/papyrus-compiler release. v0.0.4 (2026-03-15) is the
+  # latest as of this workflow's creation; supports Skyrim SE/AE, has -h
+  # (header dir) flag and tolerates header-only stubs marked `native`.
+  PAPYRUS_COMPILER_TAG: '2026.03.15'
+  PAPYRUS_COMPILER_URL: 'https://github.com/russo-2025/papyrus-compiler/releases/download/2026.03.15/papyrus-compiler-ubuntu.tar.gz'
+
+  # Pinned Grimy headers commit (sha 4ba7133, 2016-06-27 — repo is dormant
+  # but the Skyrim base scripts haven't changed since 2016).
+  GRIMY_COMMIT: '4ba7133923f48bfa28bb6fb09226cab37bcaeae0'
+
+  # Targets the user explicitly requires to build (hard failure if any fails).
+  REQUIRED_TARGETS: 'MantellaConversation MantellaConstants SKSE_HTTP'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Mantella-Spell
+        uses: actions/checkout@v4
+
+      - name: Cache Papyrus compiler binary
+        id: cache-pcompiler
+        uses: actions/cache@v4
+        with:
+          path: tools/papyrus-compiler
+          key: pcompiler-${{ env.PAPYRUS_COMPILER_TAG }}-ubuntu
+
+      - name: Download Papyrus compiler (russo-2025)
+        if: steps.cache-pcompiler.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p tools
+          curl -fsSL -o /tmp/pc.tar.gz "$PAPYRUS_COMPILER_URL"
+          tar -C tools -xzf /tmp/pc.tar.gz
+          # Archive layout: tools/papyrus-compiler/papyrus
+          chmod +x tools/papyrus-compiler/papyrus
+          tools/papyrus-compiler/papyrus help || true
+
+      - name: Cache Grimy header set
+        id: cache-headers
+        uses: actions/cache@v4
+        with:
+          path: stubs/grimy
+          key: grimy-${{ env.GRIMY_COMMIT }}
+
+      - name: Fetch Grimy header set (community-curated stubs)
+        if: steps.cache-headers.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p stubs/grimy
+          curl -fsSL "https://github.com/Rukan/Grimy-Skyrim-Papyrus-Source/archive/${GRIMY_COMMIT}.tar.gz" -o /tmp/grimy.tar.gz
+          tar -C stubs/grimy --strip-components=1 -xzf /tmp/grimy.tar.gz
+          # Keep only .psc files (drop .gitignore, README junk).
+          find stubs/grimy -type f ! -name '*.psc' -delete
+          echo "Fetched $(find stubs/grimy -name '*.psc' | wc -l) base header .psc files"
+
+      - name: Prepare build dirs
+        run: |
+          set -euo pipefail
+          mkdir -p build/pex
+          # Snapshot the input source tree so the compiler doesn't see its own
+          # output directory by accident.
+          mkdir -p build/src
+          cp -R Scripts/Source/. build/src/
+          find build/src -maxdepth 1 -name '*.psc' | head
+
+      - name: Compile required targets (hard fail)
+        run: |
+          set -euo pipefail
+          PC=tools/papyrus-compiler/papyrus
+          # Headers come from two places:
+          #   1) Grimy stub set (Bethesda base + SkyUI MCM + ConsoleUtil + UIExtensions)
+          #   2) Mantella's own Source dir, so intra-mod refs (e.g. MantellaConstants
+          #      from MantellaConversation, SKSE_HTTP from MantellaConversation) resolve.
+          # The compiler's -h flag accepts repeated paths.
+          for target in $REQUIRED_TARGETS; do
+            echo "::group::Compiling $target.psc"
+            "$PC" compile \
+              -nocache \
+              -h stubs/grimy \
+              -h build/src \
+              -i "build/src/${target}.psc" \
+              -o build/pex
+            echo "::endgroup::"
+          done
+
+          # Sanity check: each required target produced a .pex file.
+          missing=0
+          for target in $REQUIRED_TARGETS; do
+            if [ ! -f "build/pex/${target}.pex" ]; then
+              echo "::error::Missing build/pex/${target}.pex"
+              missing=$((missing+1))
+            fi
+          done
+          if [ "$missing" -gt 0 ]; then
+            echo "::error::${missing} required target(s) failed"
+            exit 1
+          fi
+          echo "Required targets OK:"
+          ls -la build/pex
+
+      - name: Compile all other Mantella scripts (soft fail)
+        # Best-effort: many scripts depend on PapyrusUtil / SkyUI MCM internals
+        # that our stub set may not fully cover. Failures here do not break the
+        # build — we still publish whatever .pex files the compiler produced.
+        continue-on-error: true
+        run: |
+          set +e
+          PC=tools/papyrus-compiler/papyrus
+          ok=0; fail=0
+          for f in build/src/*.psc; do
+            name="$(basename "$f" .psc)"
+            # Skip required ones (already built) and the flag file.
+            case " $REQUIRED_TARGETS " in *" $name "*) continue ;; esac
+            [ "$name" = "TESV_Papyrus_Flags" ] && continue
+
+            echo "::group::Compiling $name.psc (best-effort)"
+            "$PC" compile \
+              -nocache \
+              -silent \
+              -h stubs/grimy \
+              -h build/src \
+              -i "$f" \
+              -o build/pex
+            rc=$?
+            if [ $rc -eq 0 ] && [ -f "build/pex/${name}.pex" ]; then
+              ok=$((ok+1))
+              echo "  OK: ${name}.pex"
+            else
+              fail=$((fail+1))
+              echo "  SKIP: $name (compiler rc=$rc — likely missing PapyrusUtil/SkyUI internal headers)"
+            fi
+            echo "::endgroup::"
+          done
+          echo "Best-effort summary: ${ok} compiled, ${fail} skipped"
+          echo "Total .pex artifacts:"
+          find build/pex -name '*.pex' | wc -l
+
+      - name: Upload .pex artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mantella-Spell-pex
+          path: build/pex/*.pex
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Build summary
+        if: always()
+        run: |
+          {
+            echo "### Papyrus build"
+            echo ""
+            echo "Compiler: russo-2025/papyrus-compiler @ \`${PAPYRUS_COMPILER_TAG}\`"
+            echo "Headers : Rukan/Grimy-Skyrim-Papyrus-Source @ \`${GRIMY_COMMIT:0:7}\`"
+            echo ""
+            echo "| File | Size |"
+            echo "|------|-----:|"
+            if [ -d build/pex ]; then
+              for f in build/pex/*.pex; do
+                [ -f "$f" ] || continue
+                echo "| \`$(basename "$f")\` | $(stat -c '%s' "$f") |"
+              done
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
