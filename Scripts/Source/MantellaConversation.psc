@@ -79,7 +79,7 @@ function StartConversation(Actor[] actorsToStartConversationWith)
     SKSE_HTTP.setString(handle, mConsts.KEY_REQUESTTYPE, mConsts.KEY_REQUESTTYPE_INIT)
     ; send request to initialize Mantella settings (set LLM connection, start up TTS service, load character_df etc) 
     ; while waiting for actor info and context to be prepared below
-    SKSE_HTTP.sendLocalhostHttpRequest(handle, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
+    SKSE_HTTP.sendHttpRequest(handle, repository.HttpHost, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
     
     AddActors(actorsToStartConversationWith)
 
@@ -104,7 +104,7 @@ function StartConversation(Actor[] actorsToStartConversationWith)
     endIf
     microphoneEnabledLastKnownStatus = repository.microphoneEnabled
 
-    SKSE_HTTP.sendLocalhostHttpRequest(handle, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
+    SKSE_HTTP.sendHttpRequest(handle, repository.HttpHost, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
     ; string address = "http://localhost:" + mConsts.HTTP_PORT + "/" + mConsts.HTTP_ROUTE_MAIN
     ; Debug.Notification("Sent StartConversation http request to " + address)
     int eventHandle = ModEvent.Create(EventInterface.EVENT_CONVERSATION_STARTED)
@@ -255,7 +255,7 @@ function RequestContinueConversation(bool updateInGameEvents = false)
             microphoneEnabledLastKnownStatus = repository.microphoneEnabled
         endIf
 
-        SKSE_HTTP.sendLocalhostHttpRequest(handle, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
+        SKSE_HTTP.sendHttpRequest(handle, repository.HttpHost, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
     EndIf
 endFunction
 
@@ -306,10 +306,11 @@ function ProcessNpcSpeak(int handle)
                     voicelineFilename = "MantellaDi_MantellaDialogu_00001D8B_1"
                 endIf
                 int httpPort = repository.HttpPort
-                ; Use 127.0.0.1 explicitly — same reason as sendLocalhostHttpRequest:
-                ; on Wine on Android `localhost` can resolve to IPv6 first and adb reverse
-                ; only forwards IPv4.
-                string baseUrl = "http://127.0.0.1:" + httpPort + "/audio/" + voiceFolder + "/"
+                string httpHost = repository.HttpHost
+                if httpHost == ""
+                    httpHost = "127.0.0.1"
+                endIf
+                string baseUrl = "http://" + httpHost + ":" + httpPort + "/audio/" + voiceFolder + "/"
                 string localBasePath = "Data/Sound/Voice/Mantella.esp/" + voiceFolder + "/"
                 ; .wav is mandatory for audio playback
                 SKSE_HTTP.downloadFileFromUrl(baseUrl + voicelineFilename + ".wav", localBasePath + voicelineFilename + ".wav")
@@ -470,7 +471,7 @@ Function EndConversation()
     int handle = SKSE_HTTP.createDictionary()
     SKSE_HTTP.setString(handle, mConsts.KEY_REQUESTTYPE,mConsts.KEY_REQUESTTYPE_ENDCONVERSATION)
     SKSE_HTTP.setFloat(handle, mConsts.KEY_ENDCONVERSATION_TIMESTAMP, GameDaysPassed.GetValue() + 1) ; +1 because days start at 0
-    SKSE_HTTP.sendLocalhostHttpRequest(handle, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
+    SKSE_HTTP.sendHttpRequest(handle, repository.HttpHost, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
 EndFunction
 
 Function CleanupConversation()
@@ -526,7 +527,7 @@ function sendRequestForPlayerInput(string playerInput, bool updateContext)
         endIf
         SKSE_HTTP.setNestedDictionary(handle, mConsts.KEY_CONTEXT, _contextHandle)
 
-        SKSE_HTTP.sendLocalhostHttpRequest(handle, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
+        SKSE_HTTP.sendHttpRequest(handle, repository.HttpHost, repository.HttpPort, mConsts.HTTP_ROUTE_MAIN)
     EndIf
 endFunction
 

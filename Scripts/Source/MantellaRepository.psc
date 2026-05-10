@@ -104,6 +104,7 @@ bool property NPCDialogue auto ;gia
 bool property NPCdebugSelectModeEnabled auto
 ; bool restartMantellaExe = False
 int property HttpPort auto
+string property HttpHost auto  ; Where the Mantella server runs. "127.0.0.1" for local install, LAN IP for remote install (e.g. "192.168.1.50").
 
 
 event OnInit()
@@ -219,6 +220,7 @@ function assignDefaultSettings(int lastVersion, bool isFirstInit = false)
     NPCdebugSelectModeEnabled = false
 
         HttpPort = 4999
+        HttpHost = "192.168.1.50"
     EndIf
 endFunction
 

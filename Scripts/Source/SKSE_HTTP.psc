@@ -2,6 +2,12 @@ scriptName SKSE_HTTP hidden
 
 function sendLocalhostHttpRequest(int typedDictionaryHandle, int port, string route, int timeout = 0) global native
 
+;/  Same as sendLocalhostHttpRequest but with an arbitrary host (e.g. server
+    running on a different machine reachable over LAN). Empty host falls back
+    to 127.0.0.1.
+/;
+function sendHttpRequest(int typedDictionaryHandle, string host, int port, string route, int timeout = 0) global native
+
 Bool function downloadFileFromUrl(string url, string localPath, int connectTimeoutMs = 5000, int totalTimeoutMs = 30000) global native
 
 function raiseOnHttpReplyReceived(int typedDictionaryHandle) global
