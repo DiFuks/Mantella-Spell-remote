@@ -29,9 +29,9 @@ env:
   PAPYRUS_COMPILER_TAG: '2026.03.15'
   PAPYRUS_COMPILER_URL: 'https://github.com/russo-2025/papyrus-compiler/releases/download/2026.03.15/papyrus-compiler-ubuntu.tar.gz'
 
-  # Pinned Grimy headers commit (sha 4ba7133, 2016-06-27 — repo is dormant
-  # but the Skyrim base scripts haven't changed since 2016).
-  GRIMY_COMMIT: '4ba7133923f48bfa28bb6fb09226cab37bcaeae0'
+  # Pinned Grimy headers commit (latest as of workflow creation; repo is
+  # dormant — the Skyrim base scripts haven't changed since 2016).
+  GRIMY_COMMIT: '4ba71332b4851985240f582a76017216a3bd452f'
 
   # Targets the user explicitly requires to build (hard failure if any fails).
   REQUIRED_TARGETS: 'MantellaConversation MantellaConstants SKSE_HTTP'
@@ -91,77 +91,46 @@ jobs:
           cp -R Scripts/Source/. build/src/
           find build/src -maxdepth 1 -name '*.psc' | head
 
-      - name: Compile required targets (hard fail)
+      - name: Compile all .psc (best-effort, single pass)
+        # The compiler's -i accepts a directory and walks it. Many scripts
+        # depend on PapyrusUtil / SkyUI MCM internals that the Grimy stub set
+        # doesn't cover; the compiler logs errors for those but still emits
+        # .pex for the ones that did resolve. We allow non-zero exit here
+        # and gate on required targets in the next step.
+        continue-on-error: true
         run: |
-          set -euo pipefail
+          set -uo pipefail
           PC=tools/papyrus-compiler/papyrus
           # Headers come from two places:
           #   1) Grimy stub set (Bethesda base + SkyUI MCM + ConsoleUtil + UIExtensions)
-          #   2) Mantella's own Source dir, so intra-mod refs (e.g. MantellaConstants
-          #      from MantellaConversation, SKSE_HTTP from MantellaConversation) resolve.
-          # The compiler's -h flag accepts repeated paths.
-          for target in $REQUIRED_TARGETS; do
-            echo "::group::Compiling $target.psc"
-            "$PC" compile \
-              -nocache \
-              -h stubs/grimy \
-              -h build/src \
-              -i "build/src/${target}.psc" \
-              -o build/pex
-            echo "::endgroup::"
-          done
+          #   2) Mantella's own Source dir, so intra-mod refs resolve.
+          "$PC" compile \
+            -nocache \
+            -h stubs/grimy \
+            -h build/src \
+            -i build/src \
+            -o build/pex || true
+          echo "---"
+          echo "Built .pex files:"
+          find build/pex -name '*.pex' -printf '  %f (%s bytes)\n' 2>/dev/null \
+            || find build/pex -name '*.pex' -exec basename {} \;
 
-          # Sanity check: each required target produced a .pex file.
+      - name: Verify required targets compiled
+        run: |
+          set -euo pipefail
           missing=0
           for target in $REQUIRED_TARGETS; do
             if [ ! -f "build/pex/${target}.pex" ]; then
               echo "::error::Missing build/pex/${target}.pex"
               missing=$((missing+1))
+            else
+              echo "  OK: ${target}.pex"
             fi
           done
           if [ "$missing" -gt 0 ]; then
-            echo "::error::${missing} required target(s) failed"
+            echo "::error::${missing} required target(s) failed to compile"
             exit 1
           fi
-          echo "Required targets OK:"
-          ls -la build/pex
-
-      - name: Compile all other Mantella scripts (soft fail)
-        # Best-effort: many scripts depend on PapyrusUtil / SkyUI MCM internals
-        # that our stub set may not fully cover. Failures here do not break the
-        # build — we still publish whatever .pex files the compiler produced.
-        continue-on-error: true
-        run: |
-          set +e
-          PC=tools/papyrus-compiler/papyrus
-          ok=0; fail=0
-          for f in build/src/*.psc; do
-            name="$(basename "$f" .psc)"
-            # Skip required ones (already built) and the flag file.
-            case " $REQUIRED_TARGETS " in *" $name "*) continue ;; esac
-            [ "$name" = "TESV_Papyrus_Flags" ] && continue
-
-            echo "::group::Compiling $name.psc (best-effort)"
-            "$PC" compile \
-              -nocache \
-              -silent \
-              -h stubs/grimy \
-              -h build/src \
-              -i "$f" \
-              -o build/pex
-            rc=$?
-            if [ $rc -eq 0 ] && [ -f "build/pex/${name}.pex" ]; then
-              ok=$((ok+1))
-              echo "  OK: ${name}.pex"
-            else
-              fail=$((fail+1))
-              echo "  SKIP: $name (compiler rc=$rc — likely missing PapyrusUtil/SkyUI internal headers)"
-            fi
-            echo "::endgroup::"
-          done
-          echo "Best-effort summary: ${ok} compiled, ${fail} skipped"
-          echo "Total .pex artifacts:"
-          find build/pex -name '*.pex' | wc -l
 
       - name: Upload .pex artifact
         uses: actions/upload-artifact@v4
