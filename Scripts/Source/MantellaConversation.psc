@@ -293,6 +293,26 @@ function ProcessNpcSpeak(int handle)
 
         if lineToSpeak != lineToSpeakError
             Topic topicToUse = GetTopicToUse(topicID)
+            ; Download voiceline .wav and .lip from Mantella server before Say()
+            ; (server already wrote them to disk before sending the JSON reply).
+            ; The server includes voice_folder in the reply because the directory
+            ; name comes from a CSV mapping the mod cannot replicate.
+            string voiceFolder = SKSE_HTTP.getString(handle, mConsts.KEY_ACTOR_VOICEFOLDER, "")
+            if voiceFolder != ""
+                string voicelineFilename
+                if topicID == 2
+                    voicelineFilename = "MantellaDi_MantellaDialogu_0018B644_1"
+                else
+                    voicelineFilename = "MantellaDi_MantellaDialogu_00001D8B_1"
+                endIf
+                int httpPort = repository.HttpPort
+                string baseUrl = "http://localhost:" + httpPort + "/audio/" + voiceFolder + "/"
+                string localBasePath = "Data/Sound/Voice/Mantella.esp/" + voiceFolder + "/"
+                ; .wav is mandatory for audio playback
+                SKSE_HTTP.downloadFileFromUrl(baseUrl + voicelineFilename + ".wav", localBasePath + voicelineFilename + ".wav")
+                ; .lip is best-effort (lip sync). Server may not always have one; ignore failure.
+                SKSE_HTTP.downloadFileFromUrl(baseUrl + voicelineFilename + ".lip", localBasePath + voicelineFilename + ".lip")
+            endIf
             bool isPlayer = speaker == PlayerRef
             if isPlayer
                 VoiceType orgRaceDefaultVoice = SKSE_HTTP.GetRaceDefaultVoiceType(speaker)

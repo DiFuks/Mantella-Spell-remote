@@ -70,6 +70,7 @@ string property KEY_ACTOR_SPEAKER = "mantella_actor_speaker" auto
 string property KEY_ACTOR_LINETOSPEAK = "mantella_actor_line_to_speak" auto
 string property KEY_ACTOR_ISNARRATION = "mantella_is_narration" auto
 string property KEY_ACTOR_VOICEFILE= "mantella_actor_voice_file" auto
+string property KEY_ACTOR_VOICEFOLDER = "mantella_actor_voice_folder" auto
 string property KEY_ACTOR_DURATION = "mantella_actor_line_duration" auto
 string property KEY_ACTOR_ACTIONS = "mantella_actor_actions" auto
 
