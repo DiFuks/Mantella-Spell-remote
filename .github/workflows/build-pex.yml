@@ -84,36 +84,38 @@ jobs:
       - name: Prepare build dirs
         run: |
           set -euo pipefail
-          mkdir -p build/pex
-          # Snapshot the input source tree so the compiler doesn't see its own
-          # output directory by accident.
-          mkdir -p build/src
-          cp -R Scripts/Source/. build/src/
-          find build/src -maxdepth 1 -name '*.psc' | head
+          mkdir -p build/pex build/to-compile
+          # Headers dir: full Mantella source tree (so intra-mod symbols
+          # resolve as headers when compiling our targets).
+          mkdir -p build/headers
+          cp -R Scripts/Source/. build/headers/
+          # Inputs: only the targets we actually want .pex for. Everything
+          # else (MCM, advanced actions referencing PapyrusUtil/UIExtensions
+          # internals not in Grimy) stays as headers so its declarations
+          # are visible without having to compile them.
+          for target in $REQUIRED_TARGETS; do
+            cp "Scripts/Source/${target}.psc" "build/to-compile/${target}.psc"
+          done
+          ls build/to-compile
 
-      - name: Compile all .psc (best-effort, single pass)
-        # The compiler's -i accepts a directory and walks it. Many scripts
-        # depend on PapyrusUtil / SkyUI MCM internals that the Grimy stub set
-        # doesn't cover; the compiler logs errors for those but still emits
-        # .pex for the ones that did resolve. We allow non-zero exit here
-        # and gate on required targets in the next step.
-        continue-on-error: true
+      - name: Compile required targets
+        # The compiler aborts the entire batch on any error in the input set
+        # (-i). Keep that set narrow — only the .psc we patched. Everything
+        # else lives in -h headers/build/headers and is consulted by name only.
         run: |
-          set -uo pipefail
+          set -euo pipefail
           PC=tools/papyrus-compiler/papyrus
-          # Headers come from two places:
-          #   1) Grimy stub set (Bethesda base + SkyUI MCM + ConsoleUtil + UIExtensions)
-          #   2) Mantella's own Source dir, so intra-mod refs resolve.
           "$PC" compile \
             -nocache \
             -h stubs/grimy \
-            -h build/src \
-            -i build/src \
-            -o build/pex || true
+            -h build/headers \
+            -i build/to-compile \
+            -o build/pex
           echo "---"
           echo "Built .pex files:"
-          find build/pex -name '*.pex' -printf '  %f (%s bytes)\n' 2>/dev/null \
-            || find build/pex -name '*.pex' -exec basename {} \;
+          for p in build/pex/*.pex; do
+            [ -f "$p" ] && printf '  %s (%s bytes)\n' "$(basename "$p")" "$(stat -c '%s' "$p")"
+          done
 
       - name: Verify required targets compiled
         run: |
