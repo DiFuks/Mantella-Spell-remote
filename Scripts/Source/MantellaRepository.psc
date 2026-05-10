@@ -106,6 +106,18 @@ bool property NPCdebugSelectModeEnabled auto
 int property HttpPort auto
 string property HttpHost auto  ; Where the Mantella server runs. "127.0.0.1" for local install, LAN IP for remote install (e.g. "192.168.1.50").
 
+;/  Returns HttpHost, lazily initialised to the LAN IP if blank. Needed
+    because auto-property default for string is "", and existing saves
+    that initialised the Repository before HttpHost was added skip
+    assignDefaultSettings() on subsequent loads.
+/;
+string Function GetHttpHostOrDefault()
+    if HttpHost == ""
+        HttpHost = "192.168.1.50"
+    endIf
+    return HttpHost
+EndFunction
+
 
 event OnInit()
     assignDefaultSettings(0, true)
